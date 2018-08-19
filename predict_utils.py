@@ -21,9 +21,7 @@ def get_input_args():
 
 
 def process_image(image_path):
-    image_transforms = transforms.Compose([transforms.ToTensor(),
-                                          transforms.Normalize([0.485, 0.456, 0.406], 
-                                                               [0.229, 0.224, 0.225])])
+
     try:
         im = Image.open(image_path)
     except:
@@ -48,11 +46,15 @@ def process_image(image_path):
     bottom = (new_height + new_size)/2
     im = im.crop((left, top, right, bottom))
     
-    im = np.array(im)
-    im = im.transpose((2,0,1))
-    im = image_transforms(im).float()
-    im = im.transpose(0,1)
+    im = np.asarray(im) / 255
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    im = (im - mean) / std
+    
+    im = torch.from_numpy(im).float()
+    im = im.transpose(0,2)
     im = im.unsqueeze(0)
+
     return im
 
 
@@ -65,45 +67,16 @@ def load_model(checkpoint_path):
         model = models.alexnet(pretrained=True)
     elif chpt['arch'] == 'resnet152':
         model = models.resnet152(pretrained=True)
-    elif chpt['arch'] == 'squeezenet1_1':
-        model = models.squeezenet1_1(pretrained=True)
     elif chpt['arch'] == 'densenet201':
         model = models.densenet201(pretrained=True)
     elif chpt['arch'] == 'inception_v3':
         model = models.inception_v3(pretrained=True)
-        
+
     for param in model.parameters():
         param.requires_grad = False
 
     model.class_to_idx = chpt['class_to_idx']
-    
-    in_features = model.classifier[0].in_features
-    skeleton = OrderedDict()
-    
-    units = chpt['units']
-    
-    # Input layer
-    count = 0
-    skeleton.update({'fc'+str(count): nn.Linear(in_features, units[count])})
-    skeleton.update({'relu'+str(count): nn.ReLU()})
-    skeleton.update({'drop'+str(count): nn.Dropout(p=0.05)})
-    
-    # Hidden layers
-    count = 1
-    while count < len(units):
-        skeleton.update({'fc'+str(count): nn.Linear(units[count-1], units[count])})
-        skeleton.update({'relu'+str(count): nn.ReLU()})
-        skeleton.update({'drop'+str(count): nn.Dropout(p=0.05)})
-        count += 1
-    
-    # Last layer
-    skeleton.update({'fc'+str(count): nn.Linear(units[count-1], 102)})
-    skeleton.update({'output': nn.LogSoftmax(dim=1)})
-    
-    # Put the classifier on the pretrained network
-    model.classifier = nn.Sequential(skeleton)
-    
-    model.load_state_dict(chpt['state_dict'])
+    model.classifier = chpt['classifier']
     
     return model
 
